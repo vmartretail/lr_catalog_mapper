@@ -210,7 +210,7 @@ if not edited_mapping.empty:
         }
     mapping_dict = updated_mapping
 
-col1, col2, col3 = st.columns([1, 2, 7])
+col1, col2, col3 = st.columns([1, 2, 6])
 with col1:
     if st.button("Save Mapping"):
         with open(mapping_file, "w") as f:
