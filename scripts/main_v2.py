@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Page configuration and custom styling
 st.set_page_config(page_title="Marketplace Catalog Mapper", layout="wide")
 st.markdown(
     """

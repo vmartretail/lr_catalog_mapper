@@ -18,12 +18,13 @@ st.markdown(
 st.sidebar.title("Instructions")
 st.sidebar.info(
     """
-1. Upload one or more CSV/Excel files with your marketplace catalog.
-2. For each file, select the corresponding marketplace (Myntra, Flipkart, or Ajio).
+1. Upload a CSV or Excel file with marketplace catalog.
+2. Select the corresponding marketplace (Myntra, Flipkart or Ajio).
 3. Check the box if you want to proceed even if some expected headers are missing.
-4. Click **Convert Files** to transform all catalogs into LR's format.
+4. Click **Convert Files** to transform and download the catalog in LimeRoad's format.
     """
 )
+
 st.sidebar.info(
     """
 1. Review (and optionally edit) the mapping table below.
@@ -31,7 +32,6 @@ st.sidebar.info(
     """
 )
 
-# Default mapping dictionary
 DEFAULT_MAPPING = {
     "Brand Name": {"myntra": "brand", "ajio": "*Brand", "flipkart": "Brand"},
     "Color Grouping Code": {
@@ -168,12 +168,13 @@ else:
 
 def transform_catalog(df: pd.DataFrame, marketplace: str) -> (pd.DataFrame, list):
     """
-    Transforms a marketplace catalog to LR's format.
+    Transforms a marketplace catalog to LimeRoad's format.
     Returns a tuple of (transformed DataFrame, list of missing expected header names).
     """
     transformed_data = pd.DataFrame()
     missing_headers = []
 
+    # Iterate through each LimeRoad field and map the corresponding marketplace column
     for lr_field, mapping in mapping_dict.items():
         marketplace_field = mapping.get(marketplace)
         if marketplace_field:
@@ -183,22 +184,23 @@ def transform_catalog(df: pd.DataFrame, marketplace: str) -> (pd.DataFrame, list
                 transformed_data[lr_field] = None
                 missing_headers.append(marketplace_field)
         else:
+            # If there's no mapping, assign None
             transformed_data[lr_field] = None
 
     return transformed_data, missing_headers
 
 
-# MAIN APP UI
 st.title("LR's Marketplace Catalog Mapper")
+
 st.markdown("#")
 
-# Display and edit mapping
 st.subheader("Current Field Mapping (editable)")
 mapping_df = pd.DataFrame.from_dict(mapping_dict, orient="index")
 mapping_df.reset_index(inplace=True)
 mapping_df.columns = ["limeroad", "myntra", "ajio", "flipkart"]
 edited_mapping = st.data_editor(mapping_df, num_rows="dynamic", key="mapping_editor")
 
+# Update the mapping_dict if the user changes the mapping table
 if not edited_mapping.empty:
     updated_mapping = {}
     for _, row in edited_mapping.iterrows():
@@ -210,12 +212,15 @@ if not edited_mapping.empty:
         }
     mapping_dict = updated_mapping
 
+
 col1, col2, col3 = st.columns([1, 2, 7])
+
 with col1:
     if st.button("Save Mapping"):
         with open(mapping_file, "w") as f:
             json.dump(mapping_dict, f, indent=4)
         st.success("Mapping saved successfully!")
+
 with col2:
     if st.button("Reset Mapping to Default"):
         mapping_dict = DEFAULT_MAPPING.copy()
@@ -225,70 +230,54 @@ with col2:
 
 
 st.markdown("#")
-st.subheader("Upload marketplace catalog file(s) to convert to LR's format")
 
-uploaded_files = st.file_uploader(
-    "Upload CSV or Excel file(s)", type=["csv", "xlsx"], accept_multiple_files=True
-)
+st.subheader("Upload a marketplace catalog file to convert it to LimeRoad's format.")
 
-file_marketplace = {}
-if uploaded_files:
-    st.markdown("### Select Marketplace for each file")
-    for uploaded_file in uploaded_files:
-        file_marketplace[uploaded_file.name] = st.selectbox(
-            f"Marketplace for {uploaded_file.name}",
-            ["myntra", "ajio", "flipkart"],
-            key=uploaded_file.name,
-        )
+uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
+marketplace = st.selectbox("Select Marketplace", ["myntra", "ajio", "flipkart"])
 
 proceed_anyway = st.checkbox(
     "Proceed even if some expected headers are missing", value=False
 )
 
-if "all_outputs" not in st.session_state:
-    st.session_state["all_outputs"] = []
+if uploaded_file and marketplace:
+    try:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file, dtype=str)
+        else:
+            df = pd.read_excel(uploaded_file, dtype=str)
 
-if st.button("Convert Files"):
-    if uploaded_files:
-        all_outputs = []
-        progress_bar = st.progress(0)
-        total_files = len(uploaded_files)
-        for idx, uploaded_file in enumerate(uploaded_files):
-            try:
-                if uploaded_file.name.endswith(".csv"):
-                    df = pd.read_csv(uploaded_file, dtype=str)
-                else:
-                    df = pd.read_excel(uploaded_file, dtype=str)
+        transformed_df, missing = transform_catalog(df, marketplace)
 
-                marketplace = file_marketplace.get(uploaded_file.name, "")
-                transformed_df, missing = transform_catalog(df, marketplace)
-
-                if missing:
-                    st.warning(
-                        f"File {uploaded_file.name}: The following expected headers are missing: "
-                        + ", ".join(missing)
-                    )
-                    if not proceed_anyway:
-                        st.info(
-                            "Please check your file headers or select the checkbox to proceed anyway."
-                        )
-                        continue
+        if missing:
+            st.warning(
+                "The following expected headers are missing: " + ", ".join(missing)
+            )
+            if not proceed_anyway:
+                st.info(
+                    "Please check your file headers or select the checkbox to proceed anyway."
+                )
+            else:
                 output = io.BytesIO()
                 transformed_df.to_csv(output, index=False)
                 output.seek(0)
-                all_outputs.append((uploaded_file.name, output))
-                st.success(f"Processed {uploaded_file.name}.")
-            except Exception as e:
-                st.error(f"Failed to process {uploaded_file.name}: {e}")
-            progress_bar.progress((idx + 1) / total_files)
-        st.session_state["all_outputs"] = all_outputs
-    else:
-        st.info("Please upload at least one file.")
-
-# download buttons for all processed files (persisted in session state)
-if st.session_state["all_outputs"]:
-    st.markdown("### Download Transformed Files")
-    for file_name, output in st.session_state["all_outputs"]:
-        st.download_button(
-            f"Download Transformed {file_name}", output, f"LR_{file_name}", "text/csv"
-        )
+                st.success("Transformation complete! Download the file below.")
+                st.download_button(
+                    "Download Transformed CSV",
+                    output,
+                    "transformed_catalog.csv",
+                    "text/csv",
+                )
+        else:
+            output = io.BytesIO()
+            transformed_df.to_csv(output, index=False)
+            output.seek(0)
+            st.success("Transformation complete! Download the file below.")
+            st.download_button(
+                "Download Transformed CSV",
+                output,
+                "transformed_catalog.csv",
+                "text/csv",
+            )
+    except Exception as e:
+        st.error("Failed to process the uploaded file: " + str(e))
